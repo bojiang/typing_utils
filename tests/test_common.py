@@ -25,6 +25,9 @@ def test_normalize():
 
 
 def test_generic_utils():
+    assert get_origin(list) == None
+    assert get_origin(typing.Union) == None
+
     assert get_args(typing.List) == tuple()
     assert get_origin(typing.List) == list
 
@@ -46,18 +49,18 @@ def test_generic_utils():
 
 
 def test_is_subtype():
-    # assert issubtype(typing.List, typing.Any)
-    # assert issubtype(typing.Any, typing.Any)
+    assert issubtype(typing.List, typing.Any)
+    assert issubtype(typing.Any, typing.Any)
 
-    # assert issubtype(list, list)
-    # assert issubtype(typing.List, typing.List)
-    # assert not issubtype(list, dict)
-    # assert not issubtype(typing.List, typing.Dict)
+    assert issubtype(list, list)
+    assert issubtype(typing.List, typing.List)
+    assert not issubtype(list, dict)
+    assert not issubtype(typing.List, typing.Dict)
 
-    # assert issubtype(list, typing.List)
-    # assert issubtype(typing.List, list)
+    assert issubtype(list, typing.List)
+    assert issubtype(typing.List, list)
 
-    # assert issubtype(bytes, typing.ByteString)
+    assert issubtype(bytes, typing.ByteString)
     assert issubtype(list, typing.Sequence)
 
     with open("test", "wb") as f:

@@ -40,38 +40,59 @@ def ensure_builtin(tp):
 
 get_type_hints = typing.get_type_hints
 
+GenericClass = type(typing.List)
+UnionClass = type(typing.Union)
+
 
 def get_origin(tp):
     if hasattr(typing, 'get_origin'):  # python 3.8+
         _getter = getattr(typing, "get_origin")
         ori = _getter(tp)
-        if ori is None:
+    elif hasattr(typing.List, "_special"):  # python 3.7
+        if isinstance(tp, GenericClass) and not tp._special:
+            ori = tp.__origin__
+        elif hasattr(tp, "_special") and tp._special:
             ori = tp
-    elif getattr(tp, '__origin__', None):  # python 3.6+
-        ori = tp.__origin__
-    else:
-        ori = tp
+        elif tp is typing.Generic:
+            ori = typing.Generic
+        else:
+            ori = None
+    else:  # python 3.6
+        if isinstance(tp, GenericClass):
+            ori = tp.__origin__
+            if ori is None:
+                ori = tp
+        elif isinstance(tp, UnionClass):
+            ori = tp.__origin__
+        elif tp is typing.Generic:
+            ori = typing.Generic
+        else:
+            ori = None
     return ensure_builtin(ori)
-
-
-GenericClass = type(typing.List)
 
 
 def get_args(tp):
     if hasattr(typing, 'get_args'):  # python 3.8+
         _getter = getattr(typing, "get_args")
-        return _getter(tp)
-    if isinstance(tp, GenericClass):  # backport for python 3.8
-        res = tp.__args__
-        if get_origin(tp) is collections.abc.Callable and res[0] is not Ellipsis:
-            res = (list(res[:-1]), res[-1])
+        res = _getter(tp)
+    elif hasattr(typing.List, "_special"):  # python 3.7
+        if isinstance(tp, GenericClass) and not tp._special:  # backport for python 3.8
+            res = tp.__args__
+            if get_origin(tp) is collections.abc.Callable and res[0] is not Ellipsis:
+                res = (list(res[:-1]), res[-1])
+        else:
+            res = ()
+    else:  # python 3.6
+        if isinstance(tp, (GenericClass, UnionClass)):  # backport for python 3.8
+            res = tp.__args__
+            if get_origin(tp) is collections.abc.Callable and res[0] is not Ellipsis:
+                res = (list(res[:-1]), res[-1])
+        else:
+            res = ()
+    if res is None:
+        return ()
+    else:
         return res
-    return ()
-    # if getattr(tp, '__args__', None):  # python 3.6+
-    # args = tp.__args__
-    # args = tuple(a for a in args if a != typing.T)
-    # return args
-    # return tuple()
 
 
 def eval_forward_ref(fr, forward_dict=None):
@@ -103,9 +124,11 @@ class Ntype(typing.NamedTuple):
 def normalize(tp) -> Ntype:
     args = get_args(tp)
     origin = get_origin(tp)
-    if not args:
-        return Ntype(origin)
-    if origin == typing.Union:  # sort args when the origin is Union
+    if not origin:
+        return Ntype(ensure_builtin(tp))
+    origin = ensure_builtin(origin)
+
+    if origin is typing.Union:  # sort args when the origin is Union
         args = tuple(sorted(tuple(frozenset(normalize(a) for a in args)), key=repr))
     else:
         args = tuple(normalize(a) for a in args)
