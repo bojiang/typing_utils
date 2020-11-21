@@ -29,10 +29,7 @@ STATIC_SUBTYPE_MAPPING = {
 }
 
 
-forward_context = {}
-
-
-def ensure_builtin(tp):
+def _ensure_builtin(tp):
     if tp in BUILTINS_MAPPING:
         return BUILTINS_MAPPING[tp]
     return tp
@@ -45,6 +42,17 @@ UnionClass = type(typing.Union)
 
 
 def get_origin(tp):
+    """Get the unsubscripted version of a type.
+    This supports generic types, Callable, Tuple, Union, Literal, Final and ClassVar.
+    Return None for unsupported types. Examples::
+        get_origin(Literal[42]) is Literal
+        get_origin(int) is None
+        get_origin(ClassVar[int]) is ClassVar
+        get_origin(Generic) is Generic
+        get_origin(Generic[T]) is Generic
+        get_origin(Union[T, int]) is Union
+        get_origin(List[Tuple[T, T]][int]) == list
+    """
     if hasattr(typing, 'get_origin'):  # python 3.8+
         _getter = getattr(typing, "get_origin")
         ori = _getter(tp)
@@ -68,10 +76,19 @@ def get_origin(tp):
             ori = typing.Generic
         else:
             ori = None
-    return ensure_builtin(ori)
+    return _ensure_builtin(ori)
 
 
 def get_args(tp):
+    """Get type arguments with all substitutions performed.
+    For unions, basic simplifications used by Union constructor are performed.
+    Examples::
+        get_args(Dict[str, int]) == (str, int)
+        get_args(int) == ()
+        get_args(Union[int, Union[T, int], str][int]) == (int, str)
+        get_args(Union[int, Tuple[T, int]][str]) == (int, Tuple[str, int])
+        get_args(Callable[[], T][int]) == ([], int)
+    """
     if hasattr(typing, 'get_args'):  # python 3.8+
         _getter = getattr(typing, "get_args")
         res = _getter(tp)
@@ -95,8 +112,8 @@ def get_args(tp):
         return res
 
 
-def eval_forward_ref(fr, forward_dict=None):
-    local = forward_dict or {}
+def eval_forward_ref(fr, forward_refs=None):
+    local = forward_refs or {}
     if hasattr(fr, "_evaluate"):  # python3.8
         return fr._evaluate(globals(), local)
     if hasattr(fr, "_eval_type"):  # python3.6
@@ -104,12 +121,12 @@ def eval_forward_ref(fr, forward_dict=None):
     raise NotImplementedError()
 
 
-class Ntype(typing.NamedTuple):
+class NormalizedType(typing.NamedTuple):
     origin: type
     args: tuple = tuple()
 
     def __eq__(self, other):
-        if isinstance(other, Ntype):
+        if isinstance(other, NormalizedType):
             return self.origin == other.origin and self.args == other.args
         if not self.args:
             return self.origin == other
@@ -121,21 +138,21 @@ class Ntype(typing.NamedTuple):
         return f"{self.origin}[{self.args}])"
 
 
-def normalize(tp) -> Ntype:
+def normalize(tp: type) -> NormalizedType:
     args = get_args(tp)
     origin = get_origin(tp)
     if not origin:
-        return Ntype(ensure_builtin(tp))
-    origin = ensure_builtin(origin)
+        return NormalizedType(_ensure_builtin(tp))
+    origin = _ensure_builtin(origin)
 
     if origin is typing.Union:  # sort args when the origin is Union
         args = tuple(sorted(tuple(frozenset(normalize(a) for a in args)), key=repr))
     else:
         args = tuple(normalize(a) for a in args)
-    return Ntype(origin, args)
+    return NormalizedType(origin, args)
 
 
-def is_origin_subtype(left: type, right: type) -> bool:
+def _is_origin_subtype(left: type, right: type) -> bool:
     if right is typing.Any:
         return True
 
@@ -153,42 +170,75 @@ def is_origin_subtype(left: type, right: type) -> bool:
     return left == right
 
 
-def is_normal_subtype(
-    left: Ntype, right: Ntype, forward_dict: typing.Mapping[str, type]
+def _is_normal_subtype(
+    left: NormalizedType, right: NormalizedType, forward_refs: typing.Mapping[str, type]
 ):
     if isinstance(left.origin, ForwardRef):
-        left = normalize(eval_forward_ref(left.origin, forward_dict=forward_dict))
+        left = normalize(eval_forward_ref(left.origin, forward_refs=forward_refs))
 
     if isinstance(right.origin, ForwardRef):
-        right = normalize(eval_forward_ref(right.origin, forward_dict=forward_dict))
+        right = normalize(eval_forward_ref(right.origin, forward_refs=forward_refs))
 
     if not left.args and not right.args:
-        return is_origin_subtype(left.origin, right.origin)
+        return _is_origin_subtype(left.origin, right.origin)
 
     if not right.args:
-        return is_origin_subtype(left.origin, right.origin)
+        return _is_origin_subtype(left.origin, right.origin)
 
     if right.origin == left.origin == typing.Union:
         excluded = frozenset(left.args) - frozenset(right.args)
         if not excluded:
             return True
         return all(
-            any(is_normal_subtype(e, r, forward_dict) for r in right.args)
+            any(_is_normal_subtype(e, r, forward_refs) for r in right.args)
             for e in excluded
         )
 
     if right.origin == typing.Union:
-        return any(is_normal_subtype(left, a, forward_dict) for a in right.args)
+        return any(_is_normal_subtype(left, a, forward_refs) for a in right.args)
 
-    if is_origin_subtype(left.origin, right.origin):
+    if _is_origin_subtype(left.origin, right.origin):
         return all(
             al is not None
             and ar is not None
-            and is_normal_subtype(al, ar, forward_dict)
+            and _is_normal_subtype(al, ar, forward_refs)
             for al, ar in itertools.zip_longest(left.args, right.args)
         )
     return False
 
 
-def issubtype(left: type, right: type, forward_dict: typing.Optional[dict] = None):
-    return is_normal_subtype(normalize(left), normalize(right), forward_dict)
+def issubtype(left: type, right: type, forward_refs: typing.Optional[dict] = None):
+    """Check that the left argument is a subtype of the right.
+    For unions, check if the type arguments of the left is a subset of the right.
+    Also works for nested types including ForwardRefs.
+
+    Examples::
+        issubtype(typing.List, typing.Any) == True
+        issubtype(list, list) == True
+        issubtype(list, typing.List) == True
+        issubtype(list, typing.Sequence) == True
+        issubtype(typing.List[int], list) == True
+        issubtype(typing.List[typing.List], list) == True
+        issubtype(list, typing.List[int]) == False
+        issubtype(list, typing.Union[typing.Tuple, typing.Set]) == False
+        issubtype(typing.List[typing.List], typing.List[typing.Sequence]) == True
+
+        JSON = typing.Union[
+            int, float, bool, str, None, typing.Sequence["JSON"],
+            typing.Mapping[str, "JSON"]
+        ]
+        issubtype(str, JSON, forward_refs={'JSON': JSON}) == True
+        issubtype(typing.Dict[str, str], JSON, forward_refs={'JSON': JSON}) == True
+        issubtype(typing.Dict[str, bytes], JSON, forward_refs={'JSON': JSON}) == False
+        """
+    return _is_normal_subtype(normalize(left), normalize(right), forward_refs)
+
+
+__all__ = [
+    "get_origin",
+    "get_args",
+    "get_type_hints",
+    "issubtype",
+    "normalize",
+    "NormalizedType",
+]
