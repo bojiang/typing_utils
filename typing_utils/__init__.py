@@ -1,3 +1,18 @@
+'''
+Backport Python3.8+ typing utils &amp; issubtype &amp; more
+
+![Python 3.6](https://github.com/bojiang/typing_utils/workflows/Python%203.6/badge.svg)
+![Python 3.7](https://github.com/bojiang/typing_utils/workflows/Python%203.7/badge.svg)
+![Python 3.8](https://github.com/bojiang/typing_utils/workflows/Python%203.8/badge.svg)
+
+## Install
+
+``` bash
+    pip install typing_utils
+```
+'''
+
+
 import collections
 import contextlib
 import io
@@ -44,7 +59,13 @@ UnionClass = type(typing.Union)
 def get_origin(tp):
     """Get the unsubscripted version of a type.
     This supports generic types, Callable, Tuple, Union, Literal, Final and ClassVar.
-    Return None for unsupported types. Examples::
+    Return None for unsupported types.
+
+    Examples:
+
+    ```python
+        from typing_utils import get_origin
+
         get_origin(Literal[42]) is Literal
         get_origin(int) is None
         get_origin(ClassVar[int]) is ClassVar
@@ -52,6 +73,7 @@ def get_origin(tp):
         get_origin(Generic[T]) is Generic
         get_origin(Union[T, int]) is Union
         get_origin(List[Tuple[T, T]][int]) == list
+    ```
     """
     if hasattr(typing, 'get_origin'):  # python 3.8+
         _getter = getattr(typing, "get_origin")
@@ -82,12 +104,18 @@ def get_origin(tp):
 def get_args(tp):
     """Get type arguments with all substitutions performed.
     For unions, basic simplifications used by Union constructor are performed.
-    Examples::
+
+    Examples:
+
+    ```python
+        from typing_utils import get_args
+
         get_args(Dict[str, int]) == (str, int)
         get_args(int) == ()
         get_args(Union[int, Union[T, int], str][int]) == (int, str)
         get_args(Union[int, Tuple[T, int]][str]) == (int, Tuple[str, int])
         get_args(Callable[[], T][int]) == ([], int)
+    ```
     """
     if hasattr(typing, 'get_args'):  # python 3.8+
         _getter = getattr(typing, "get_args")
@@ -212,7 +240,11 @@ def issubtype(left: type, right: type, forward_refs: typing.Optional[dict] = Non
     For unions, check if the type arguments of the left is a subset of the right.
     Also works for nested types including ForwardRefs.
 
-    Examples::
+    Examples:
+
+    ```python
+        from typing_utils import issubtype
+
         issubtype(typing.List, typing.Any) == True
         issubtype(list, list) == True
         issubtype(list, typing.List) == True
@@ -222,7 +254,6 @@ def issubtype(left: type, right: type, forward_refs: typing.Optional[dict] = Non
         issubtype(list, typing.List[int]) == False
         issubtype(list, typing.Union[typing.Tuple, typing.Set]) == False
         issubtype(typing.List[typing.List], typing.List[typing.Sequence]) == True
-
         JSON = typing.Union[
             int, float, bool, str, None, typing.Sequence["JSON"],
             typing.Mapping[str, "JSON"]
@@ -230,15 +261,14 @@ def issubtype(left: type, right: type, forward_refs: typing.Optional[dict] = Non
         issubtype(str, JSON, forward_refs={'JSON': JSON}) == True
         issubtype(typing.Dict[str, str], JSON, forward_refs={'JSON': JSON}) == True
         issubtype(typing.Dict[str, bytes], JSON, forward_refs={'JSON': JSON}) == False
-        """
+    ```
+    """
     return _is_normal_subtype(normalize(left), normalize(right), forward_refs)
 
 
 __all__ = [
+    "issubtype",
     "get_origin",
     "get_args",
     "get_type_hints",
-    "issubtype",
-    "normalize",
-    "NormalizedType",
 ]
