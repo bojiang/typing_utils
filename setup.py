@@ -17,6 +17,7 @@ setuptools.setup(
     packages=setuptools.find_packages(exclude=["tests*"]),
     classifiers=[
         "Operating System :: OS Independent",
+        "Development Status :: 2 - Pre-Alpha",
         "Programming Language :: Python :: 3.6",
         "Programming Language :: Python :: 3.7",
         "Programming Language :: Python :: 3.8",
