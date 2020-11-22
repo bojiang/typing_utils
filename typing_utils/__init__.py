@@ -31,6 +31,7 @@ BUILTINS_MAPPING = {
     typing.Set: set,
     typing.Dict: dict,
     typing.Tuple: tuple,
+    typing.ByteString: bytes,  # https://docs.python.org/3/library/typing.html#typing.ByteString
 }
 
 
@@ -134,10 +135,7 @@ def get_args(tp):
                 res = (list(res[:-1]), res[-1])
         else:
             res = ()
-    if res is None:
-        return ()
-    else:
-        return res
+    return () if res is None else res
 
 
 def eval_forward_ref(fr, forward_refs=None):
@@ -181,6 +179,9 @@ def normalize(tp: type) -> NormalizedType:
 
 
 def _is_origin_subtype(left: type, right: type) -> bool:
+    if left is right:
+        return True
+
     if right is typing.Any:
         return True
 
@@ -192,8 +193,8 @@ def _is_origin_subtype(left: type, right: type) -> bool:
             if su == right:
                 return True
 
-    if issubclass(left, right):
-        return True
+    if isinstance(left, type):  # issubclass() arg 1 must be a class
+        return issubclass(left, right)
 
     return left == right
 
@@ -226,6 +227,13 @@ def _is_normal_subtype(
         return any(_is_normal_subtype(left, a, forward_refs) for a in right.args)
 
     if _is_origin_subtype(left.origin, right.origin):
+        if (
+            left.args
+            and left.args[-1].origin is not Ellipsis
+            and right.args[-1].origin is Ellipsis
+        ):
+            ar = right.args[0]
+            return all(_is_normal_subtype(al, ar, forward_refs) for al in left.args)
         return all(
             al is not None
             and ar is not None

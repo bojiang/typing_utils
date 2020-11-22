@@ -49,20 +49,25 @@ def test_generic_utils():
 
 
 def test_is_subtype():
+    # Any
     assert issubtype(typing.List, typing.Any)
     assert issubtype(typing.Any, typing.Any)
 
+    # Self
     assert issubtype(list, list)
     assert issubtype(typing.List, typing.List)
     assert not issubtype(list, dict)
     assert not issubtype(typing.List, typing.Dict)
 
+    # alias
     assert issubtype(list, typing.List)
     assert issubtype(typing.List, list)
-
     assert issubtype(bytes, typing.ByteString)
+
+    # Subclass
     assert issubtype(list, typing.Sequence)
 
+    # FileLike
     with open("test", "wb") as f:
         assert issubtype(type(f), typing.BinaryIO)
     with open("test", "rb") as f:
@@ -77,26 +82,40 @@ def test_is_subtype():
     assert issubtype(type(io.BytesIO(b"0")), typing.BinaryIO)
     assert issubtype(type(io.StringIO("0")), typing.TextIO)
 
+    # subscribed generic
     assert issubtype(typing.List[int], list)
     assert issubtype(typing.List[typing.List], list)
     assert not issubtype(list, typing.List[int])
 
+    # Union
     assert issubtype(list, typing.Union[typing.List, typing.Tuple])
     assert not issubtype(list, typing.Union[typing.Tuple, typing.Set])
+    assert not issubtype(typing.Tuple[typing.Union[int, None]], typing.Tuple[None])
 
+    # Nested containers
     assert issubtype(typing.List[int], typing.List[int])
     assert issubtype(typing.List[typing.List], typing.List[typing.Sequence])
 
     assert issubtype(typing.Dict[typing.List, int], typing.Dict[typing.Sequence, int])
 
-    assert issubtype(int, JSON, forward_dict={'JSON': JSON})
-    assert issubtype(str, JSON, forward_dict={'JSON': JSON})
-    assert issubtype(typing.Dict[str, str], JSON, forward_dict={'JSON': JSON})
-    assert not issubtype(typing.Dict[str, bytes], JSON, forward_dict={'JSON': JSON})
+    # ForwardRef
+    assert issubtype(int, JSON, forward_refs={'JSON': JSON})
+    assert issubtype(str, JSON, forward_refs={'JSON': JSON})
+    assert issubtype(typing.Dict[str, str], JSON, forward_refs={'JSON': JSON})
+    assert not issubtype(typing.Dict[str, bytes], JSON, forward_refs={'JSON': JSON})
 
     assert issubtype(
-        typing.Dict[str, str], typing.Union[JSON, bytes], forward_dict={'JSON': JSON}
+        typing.Dict[str, str], typing.Union[JSON, bytes], forward_refs={'JSON': JSON}
     )
     assert not issubtype(
-        typing.Dict[str, bytes], typing.Union[JSON, bytes], forward_dict={'JSON': JSON}
+        typing.Dict[str, bytes], typing.Union[JSON, bytes], forward_refs={'JSON': JSON}
     )
+
+    # Ellipsis
+    assert issubtype(typing.Tuple[list], typing.Tuple[list, ...])
+    assert issubtype(typing.Tuple[typing.List], typing.Tuple[list, ...])
+    assert issubtype(typing.Tuple[list, list], typing.Tuple[typing.Sequence, ...])
+    assert not issubtype(typing.Tuple[list, int], typing.Tuple[typing.Sequence, ...])
+    assert issubtype(typing.Tuple[list, ...], typing.Tuple[list, ...])
+    assert issubtype(typing.Tuple[list, ...], typing.Tuple[typing.Sequence, ...])
+    assert not issubtype(typing.Tuple[list, ...], typing.Tuple[list])
