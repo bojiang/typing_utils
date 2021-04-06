@@ -25,5 +25,5 @@ jobs:
           python-version: ${{ matrix.python-version }}
           architecture: x64
       - name: Run Unit Tests
-        run: python setup.py test
+        run: pytest tests
         shell: bash
