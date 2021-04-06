@@ -3,7 +3,6 @@ import setuptools
 with open("README.md", "r", encoding="utf8") as f:
     long_description = f.read()
 
-
 setuptools.setup(
     name="typing_utils",
     version="0.0.2",
@@ -25,4 +24,5 @@ setuptools.setup(
         "Programming Language :: Python :: Implementation :: CPython",
     ],
     python_requires=">=3.6.1",
+    extras_require={"test": ["pytest"]},
 )
