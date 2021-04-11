@@ -140,8 +140,8 @@ def get_args(tp):
 
 def eval_forward_ref(fr, forward_refs=None):
     local = forward_refs or {}
-    if hasattr(fr, "_evaluate"):  # python3.8
-        return fr._evaluate(globals(), local)
+    if hasattr(typing, "_eval_type"):  # python3.8 & python 3.9
+        return typing._eval_type(fr, globals(), local)
     if hasattr(fr, "_eval_type"):  # python3.6
         return fr._eval_type(globals(), local)
     raise NotImplementedError()
