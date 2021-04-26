@@ -9,10 +9,10 @@ Backport Python3.8+ typing utils &amp; issubtype &amp; more
     - [get_args](#get_args)
     - [get_type_hints](#get_type_hints)
 
-![Python 3.6](https://github.com/bojiang/typing_utils/workflows/Python%203.6/badge.svg)
-![Python 3.7](https://github.com/bojiang/typing_utils/workflows/Python%203.7/badge.svg)
-![Python 3.8](https://github.com/bojiang/typing_utils/workflows/Python%203.8/badge.svg)
-![Python 3.9](https://github.com/bojiang/typing_utils/workflows/Python%203.9/badge.svg)
+[![Python 3.6](https://github.com/bojiang/typing_utils/workflows/Python%203.6/badge.svg)](https://github.com/bojiang/typing_utils/actions/workflows/py36.yml)
+[![Python 3.7](https://github.com/bojiang/typing_utils/workflows/Python%203.7/badge.svg)](https://github.com/bojiang/typing_utils/actions/workflows/py37.yml)
+[![Python 3.8](https://github.com/bojiang/typing_utils/workflows/Python%203.8/badge.svg)](https://github.com/bojiang/typing_utils/actions/workflows/py38.yml)
+[![Python 3.9](https://github.com/bojiang/typing_utils/workflows/Python%203.9/badge.svg)](https://github.com/bojiang/typing_utils/actions/workflows/py39.yml)
 
 ## Install
 
