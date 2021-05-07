@@ -13,7 +13,7 @@ Backport Python3.8+ typing utils &amp; issubtype &amp; more
 '''
 
 
-import collections
+import collections.abc
 import contextlib
 import io
 import itertools
@@ -32,6 +32,7 @@ BUILTINS_MAPPING = {
     typing.Dict: dict,
     typing.Tuple: tuple,
     typing.ByteString: bytes,  # https://docs.python.org/3/library/typing.html#typing.ByteString
+    typing.Callable: collections.abc.Callable,
 }
 
 
