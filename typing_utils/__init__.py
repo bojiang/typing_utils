@@ -14,7 +14,6 @@ Backport Python3.8+ typing utils &amp; issubtype &amp; more
 
 
 import collections.abc
-import contextlib
 import io
 import itertools
 import typing
@@ -33,10 +32,11 @@ BUILTINS_MAPPING = {
     typing.Tuple: tuple,
     typing.ByteString: bytes,  # https://docs.python.org/3/library/typing.html#typing.ByteString
     typing.Callable: collections.abc.Callable,
+    typing.Sequence: collections.abc.Sequence,
 }
 
 
-STATIC_SUBTYPE_MAPPING = {
+STATIC_SUBTYPE_MAPPING: typing.Dict[type, typing.Type] = {
     io.TextIOWrapper: typing.TextIO,
     io.TextIOBase: typing.TextIO,
     io.StringIO: typing.TextIO,
@@ -46,7 +46,18 @@ STATIC_SUBTYPE_MAPPING = {
 }
 
 
+def _hashable(v):
+    """Determine whether `v` can be hashed."""
+    try:
+        hash(v)
+    except TypeError:
+        return False
+    return True
+
+
 def _ensure_builtin(tp):
+    assert _hashable(tp), "_ensure_builtin should only be called on element types"
+
     if tp in BUILTINS_MAPPING:
         return BUILTINS_MAPPING[tp]
     return tp
@@ -103,7 +114,7 @@ def get_origin(tp):
     return _ensure_builtin(ori)
 
 
-def get_args(tp):
+def get_args(tp) -> typing.Tuple:
     """Get type arguments with all substitutions performed.
     For unions, basic simplifications used by Union constructor are performed.
 
@@ -140,29 +151,49 @@ def get_args(tp):
 
 
 def eval_forward_ref(fr, forward_refs=None):
-    local = forward_refs or {}
+    localns = forward_refs or {}
     if hasattr(typing, "_eval_type"):  # python3.8 & python 3.9
-        return typing._eval_type(fr, globals(), local)
+        return typing._eval_type(fr, globals(), localns)
     if hasattr(fr, "_eval_type"):  # python3.6
-        return fr._eval_type(globals(), local)
+        return fr._eval_type(globals(), localns)
     raise NotImplementedError()
 
 
 class NormalizedType(typing.NamedTuple):
     origin: type
-    args: tuple = tuple()
+    args: typing.Union[tuple, frozenset] = tuple()
 
     def __eq__(self, other):
         if isinstance(other, NormalizedType):
+            if self.origin != other.origin:
+                return False
+            if isinstance(self.args, frozenset) and isinstance(other.args, frozenset):
+                return self.args <= other.args and other.args <= self.args
             return self.origin == other.origin and self.args == other.args
         if not self.args:
             return self.origin == other
         return False
 
+    def __hash__(self) -> int:
+        if not self.args:
+            return hash(self.origin)
+        return hash((self.origin, self.args))
+
     def __repr__(self):
         if not self.args:
             return f"{self.origin}"
         return f"{self.origin}[{self.args}])"
+
+
+TypeArgs = typing.Union[type, typing.AbstractSet[type], typing.Sequence[type]]
+
+
+def _normalize_args(tps: TypeArgs):
+    if isinstance(tps, collections.abc.Sequence):
+        return tuple(_normalize_args(tp) for tp in tps)
+    if isinstance(tps, collections.abc.Set):
+        return frozenset(_normalize_args(tp) for tp in tps)
+    return normalize(tps)
 
 
 def normalize(tp: type) -> NormalizedType:
@@ -173,9 +204,9 @@ def normalize(tp: type) -> NormalizedType:
     origin = _ensure_builtin(origin)
 
     if origin is typing.Union:  # sort args when the origin is Union
-        args = tuple(sorted(tuple(frozenset(normalize(a) for a in args)), key=repr))
+        args = _normalize_args(frozenset(args))
     else:
-        args = tuple(normalize(a) for a in args)
+        args = _normalize_args(args)
     return NormalizedType(origin, args)
 
 
@@ -190,8 +221,8 @@ def _is_origin_subtype(left: type, right: type) -> bool:
         return True
 
     if hasattr(left, "mro"):
-        for su in left.mro():
-            if su == right:
+        for parent in left.mro():
+            if parent == right:
                 return True
 
     if isinstance(left, type):  # issubclass() arg 1 must be a class
@@ -200,8 +231,69 @@ def _is_origin_subtype(left: type, right: type) -> bool:
     return left == right
 
 
+NormalizedTypeArgs = typing.Union[
+    typing.Tuple["NormalizedTypeArgs", ...],
+    typing.FrozenSet[NormalizedType],
+    NormalizedType,
+]
+
+
+def _is_origin_subtype_args(
+    left: NormalizedTypeArgs,
+    right: NormalizedTypeArgs,
+    forward_refs: typing.Optional[typing.Mapping[str, type]],
+) -> bool:
+    if isinstance(left, frozenset):
+        if not isinstance(right, frozenset):
+            return False
+
+        excluded = left - right
+        if not excluded:
+            # Union[str, int] <> Union[int, str]
+            return True
+
+        # Union[list, int] <> Union[typing.Sequence, int]
+        return all(
+            any(_is_normal_subtype(e, r, forward_refs) for r in right) for e in excluded
+        )
+
+    if isinstance(left, collections.abc.Sequence) and not isinstance(
+        left, NormalizedType
+    ):
+        if not isinstance(right, collections.abc.Sequence) or isinstance(
+            right, NormalizedType
+        ):
+            return False
+
+        if (
+            left
+            and left[-1].origin is not Ellipsis
+            and right
+            and right[-1].origin is Ellipsis
+        ):
+            # Tuple[type, type] <> Tuple[type, ...]
+            return all(_is_origin_subtype_args(l, right[0], forward_refs) for l in left)
+
+        if len(left) != len(right):
+            return False
+
+        return all(
+            l is not None
+            and r is not None
+            and _is_origin_subtype_args(l, r, forward_refs)
+            for l, r in itertools.zip_longest(left, right)
+        )
+
+    assert isinstance(left, NormalizedType)
+    assert isinstance(right, NormalizedType)
+
+    return _is_normal_subtype(left, right, forward_refs)
+
+
 def _is_normal_subtype(
-    left: NormalizedType, right: NormalizedType, forward_refs: typing.Mapping[str, type]
+    left: NormalizedType,
+    right: NormalizedType,
+    forward_refs: typing.Optional[typing.Mapping[str, type]],
 ):
     if isinstance(left.origin, ForwardRef):
         left = normalize(eval_forward_ref(left.origin, forward_refs=forward_refs))
@@ -216,31 +308,13 @@ def _is_normal_subtype(
         return _is_origin_subtype(left.origin, right.origin)
 
     if right.origin == left.origin == typing.Union:
-        excluded = frozenset(left.args) - frozenset(right.args)
-        if not excluded:
-            return True
-        return all(
-            any(_is_normal_subtype(e, r, forward_refs) for r in right.args)
-            for e in excluded
-        )
-
+        return _is_origin_subtype_args(left.args, right.args, forward_refs)
     if right.origin == typing.Union:
         return any(_is_normal_subtype(left, a, forward_refs) for a in right.args)
 
     if _is_origin_subtype(left.origin, right.origin):
-        if (
-            left.args
-            and left.args[-1].origin is not Ellipsis
-            and right.args[-1].origin is Ellipsis
-        ):
-            ar = right.args[0]
-            return all(_is_normal_subtype(al, ar, forward_refs) for al in left.args)
-        return all(
-            al is not None
-            and ar is not None
-            and _is_normal_subtype(al, ar, forward_refs)
-            for al, ar in itertools.zip_longest(left.args, right.args)
-        )
+        return _is_origin_subtype_args(left.args, right.args, forward_refs)
+
     return False
 
 
