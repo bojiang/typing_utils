@@ -1,8 +1,11 @@
+'''
+common tests
+'''
+import collections.abc
+import io
 import typing
 
-import pytest
-
-from typing_utils import get_args, get_origin, issubtype, normalize
+from typing_utils import NormalizedType, get_args, get_origin, issubtype, normalize
 
 JSON = typing.Union[
     int, float, bool, str, None, typing.Sequence["JSON"], typing.Mapping[str, "JSON"]
@@ -10,12 +13,24 @@ JSON = typing.Union[
 
 
 def test_normalize():
+    # basic types
     assert normalize(list) == normalize(typing.List) == list
+
+    # abstract types
+    assert normalize(collections.abc.Sequence) == normalize(typing.Sequence)
+
+    # common generic types
     assert normalize(typing.Union) == typing.Union
-    assert normalize(typing.Union[int, typing.List, list]) == normalize(
-        typing.Union[typing.List, list, int]
+    assert (
+        normalize(typing.Union[int, typing.List, list])
+        == normalize(typing.Union[list, int])
+        == NormalizedType(typing.Union, frozenset((list, int)))
+    )
+    assert normalize(typing.Union[typing.List, list]) != normalize(
+        typing.Union[typing.Sequence, int]
     )
 
+    # Union
     assert normalize(typing.Union[typing.List[int], int]) == normalize(
         typing.Union[int, typing.List[int], int]
     )
@@ -23,10 +38,21 @@ def test_normalize():
         typing.Union[typing.List, int]
     )
 
+    # collections
+    # Callable
+    assert (
+        normalize(typing.Callable[[typing.List, int], None])
+        == normalize(typing.Callable[[list, int], None])
+        == NormalizedType(collections.abc.Callable, ((list, int), type(None)))
+    )
+    assert normalize(typing.Callable[[typing.List, int], None]) != normalize(
+        typing.Callable[[int, list], None]
+    )
+
 
 def test_generic_utils():
-    assert get_origin(list) == None
-    assert get_origin(typing.Union) == None
+    assert get_origin(list) is None
+    assert get_origin(typing.Union) is None
 
     assert get_args(typing.List) == tuple()
     assert get_origin(typing.List) == list
@@ -38,10 +64,14 @@ def test_generic_utils():
     assert get_origin(typing.Union[int, str]) == typing.Union
     assert get_args(typing.Union[int, str]) == (int, str)
 
-    Var = typing.TypeVar("PayloadType")
+    fun = typing.Callable[[str, int], int]
+    assert get_origin(fun) == collections.abc.Callable
+    assert get_args(fun) == ([str, int], int)
 
-    class TypeA(typing.Generic[Var]):
-        def __init__(self, payload: Var):
+    PayloadType = typing.TypeVar("PayloadType")
+
+    class TypeA(typing.Generic[PayloadType]):
+        def __init__(self, payload: PayloadType):
             self.payload = payload
 
     assert get_origin(TypeA[int]) == TypeA
@@ -77,8 +107,6 @@ def test_is_subtype():
     with open("test", "r") as f:
         assert issubtype(type(f), typing.TextIO)
 
-    import io
-
     assert issubtype(type(io.BytesIO(b"0")), typing.BinaryIO)
     assert issubtype(type(io.StringIO("0")), typing.TextIO)
 
@@ -97,6 +125,39 @@ def test_is_subtype():
     assert issubtype(typing.List[typing.List], typing.List[typing.Sequence])
 
     assert issubtype(typing.Dict[typing.List, int], typing.Dict[typing.Sequence, int])
+    assert issubtype(
+        typing.Callable[[typing.List, int], int],
+        typing.Callable[[typing.Sequence, int], int],
+    )
+    assert not issubtype(
+        typing.Callable[[typing.Sequence, int], int],
+        typing.Callable[[typing.List, int], int],
+    )
+
+    # Callable
+    assert issubtype(
+        typing.Callable[[typing.List, int], None], typing.Callable[[list, int], None],
+    )
+    assert issubtype(
+        typing.Callable[[typing.List, int], None],
+        typing.Callable[[typing.Sequence, int], None],
+    )
+    assert issubtype(
+        typing.Callable[[typing.List[int], int], None],
+        typing.Callable[[typing.Sequence[int], int], None],
+    )
+    assert not issubtype(
+        typing.Callable[[typing.List[int], int], None],
+        typing.Callable[[typing.List[str], int], None],
+    )
+    assert not issubtype(
+        typing.Callable[[typing.List[int], int], None],
+        typing.Callable[[typing.List[int], int], int],
+    )
+    assert not issubtype(
+        typing.Callable[[typing.List[int], int, None], None],
+        typing.Callable[[typing.List[int], int], None],
+    )
 
     # ForwardRef
     assert issubtype(int, JSON, forward_refs={'JSON': JSON})
