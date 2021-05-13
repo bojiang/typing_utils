@@ -160,6 +160,10 @@ def eval_forward_ref(fr, forward_refs=None):
 
 
 class NormalizedType(typing.NamedTuple):
+    '''
+    Normalized type, made it possible to compare, hash between types.
+    '''
+
     origin: type
     args: typing.Union[tuple, frozenset] = tuple()
 
@@ -196,11 +200,14 @@ def _normalize_args(tps: TypeArgs):
     return normalize(tps)
 
 
-def normalize(tp: type) -> NormalizedType:
-    args = get_args(tp)
-    origin = get_origin(tp)
+def normalize(type_: type) -> NormalizedType:
+    '''
+    convert types to NormalizedType instances.
+    '''
+    args = get_args(type_)
+    origin = get_origin(type_)
     if not origin:
-        return NormalizedType(_ensure_builtin(tp))
+        return NormalizedType(_ensure_builtin(type_))
     origin = _ensure_builtin(origin)
 
     if origin is typing.Union:  # sort args when the origin is Union
