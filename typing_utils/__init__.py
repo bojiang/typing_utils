@@ -33,6 +33,7 @@ BUILTINS_MAPPING = {
     typing.ByteString: bytes,  # https://docs.python.org/3/library/typing.html#typing.ByteString
     typing.Callable: collections.abc.Callable,
     typing.Sequence: collections.abc.Sequence,
+    type(None): None,
 }
 
 
@@ -55,7 +56,7 @@ def _hashable(v):
     return True
 
 
-def _ensure_builtin(tp):
+def _ensure_builtin(tp: typing.Optional[type]) -> typing.Optional[type]:
     assert _hashable(tp), "_ensure_builtin should only be called on element types"
 
     if tp in BUILTINS_MAPPING:
@@ -160,7 +161,11 @@ def eval_forward_ref(fr, forward_refs=None):
 
 
 class NormalizedType(typing.NamedTuple):
-    origin: type
+    '''
+    Normalized type, made it possible to compare, hash between types.
+    '''
+
+    origin: typing.Optional[type]
     args: typing.Union[tuple, frozenset] = tuple()
 
     def __eq__(self, other):
@@ -196,11 +201,14 @@ def _normalize_args(tps: TypeArgs):
     return normalize(tps)
 
 
-def normalize(tp: type) -> NormalizedType:
-    args = get_args(tp)
-    origin = get_origin(tp)
+def normalize(type_: typing.Optional[type]) -> NormalizedType:
+    '''
+    convert types to NormalizedType instances.
+    '''
+    args = get_args(type_)
+    origin = get_origin(type_)
     if not origin:
-        return NormalizedType(_ensure_builtin(tp))
+        return NormalizedType(_ensure_builtin(type_))
     origin = _ensure_builtin(origin)
 
     if origin is typing.Union:  # sort args when the origin is Union
@@ -210,14 +218,20 @@ def normalize(tp: type) -> NormalizedType:
     return NormalizedType(origin, args)
 
 
-def _is_origin_subtype(left: type, right: type) -> bool:
+def _is_origin_subtype(
+    left: typing.Optional[type], right: typing.Optional[type]
+) -> bool:
     if left is right:
         return True
 
     if right is typing.Any:
         return True
 
-    if left in STATIC_SUBTYPE_MAPPING and right == STATIC_SUBTYPE_MAPPING[left]:
+    if (
+        left is not None
+        and left in STATIC_SUBTYPE_MAPPING
+        and right == STATIC_SUBTYPE_MAPPING[left]
+    ):
         return True
 
     if hasattr(left, "mro"):
@@ -225,7 +239,7 @@ def _is_origin_subtype(left: type, right: type) -> bool:
             if parent == right:
                 return True
 
-    if isinstance(left, type):  # issubclass() arg 1 must be a class
+    if isinstance(left, type) and isinstance(right, type):
         return issubclass(left, right)
 
     return left == right
@@ -318,7 +332,11 @@ def _is_normal_subtype(
     return False
 
 
-def issubtype(left: type, right: type, forward_refs: typing.Optional[dict] = None):
+def issubtype(
+    left: typing.Optional[type],
+    right: typing.Optional[type],
+    forward_refs: typing.Optional[dict] = None,
+):
     """Check that the left argument is a subtype of the right.
     For unions, check if the type arguments of the left is a subset of the right.
     Also works for nested types including ForwardRefs.

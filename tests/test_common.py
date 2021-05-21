@@ -13,6 +13,9 @@ JSON = typing.Union[
 
 
 def test_normalize():
+    # None
+    assert normalize(None) == normalize(type(None)) == None
+
     # basic types
     assert normalize(list) == normalize(typing.List) == list
 
@@ -39,11 +42,13 @@ def test_normalize():
     )
 
     # collections
+    assert normalize(typing.List) == normalize(list) == list
+
     # Callable
     assert (
         normalize(typing.Callable[[typing.List, int], None])
         == normalize(typing.Callable[[list, int], None])
-        == NormalizedType(collections.abc.Callable, ((list, int), type(None)))
+        == NormalizedType(collections.abc.Callable, ((list, int), None))
     )
     assert normalize(typing.Callable[[typing.List, int], None]) != normalize(
         typing.Callable[[int, list], None]
@@ -89,6 +94,11 @@ def test_is_subtype():
     assert not issubtype(list, dict)
     assert not issubtype(typing.List, typing.Dict)
 
+    # None
+    assert issubtype(None, type(None))
+    assert issubtype(type(None), None)
+    assert issubtype(None, None)
+
     # alias
     assert issubtype(list, typing.List)
     assert issubtype(typing.List, list)
@@ -98,14 +108,14 @@ def test_is_subtype():
     assert issubtype(list, typing.Sequence)
 
     # FileLike
-    with open("test", "wb") as f:
-        assert issubtype(type(f), typing.BinaryIO)
-    with open("test", "rb") as f:
-        assert issubtype(type(f), typing.BinaryIO)
-    with open("test", "w") as f:
-        assert issubtype(type(f), typing.TextIO)
-    with open("test", "r") as f:
-        assert issubtype(type(f), typing.TextIO)
+    with open("test", "wb") as file_ref:
+        assert issubtype(type(file_ref), typing.BinaryIO)
+    with open("test", "rb") as file_ref:
+        assert issubtype(type(file_ref), typing.BinaryIO)
+    with open("test", "w") as file_ref:
+        assert issubtype(type(file_ref), typing.TextIO)
+    with open("test", "r") as file_ref:
+        assert issubtype(type(file_ref), typing.TextIO)
 
     assert issubtype(type(io.BytesIO(b"0")), typing.BinaryIO)
     assert issubtype(type(io.StringIO("0")), typing.TextIO)
