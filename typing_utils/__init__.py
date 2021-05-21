@@ -56,7 +56,7 @@ def _hashable(v):
     return True
 
 
-def _ensure_builtin(tp: typing.Optional[type]) -> type:
+def _ensure_builtin(tp: typing.Optional[type]) -> typing.Optional[type]:
     assert _hashable(tp), "_ensure_builtin should only be called on element types"
 
     if tp in BUILTINS_MAPPING:
@@ -165,7 +165,7 @@ class NormalizedType(typing.NamedTuple):
     Normalized type, made it possible to compare, hash between types.
     '''
 
-    origin: type
+    origin: typing.Optional[type]
     args: typing.Union[tuple, frozenset] = tuple()
 
     def __eq__(self, other):
