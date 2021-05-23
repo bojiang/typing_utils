@@ -5,7 +5,14 @@ import collections.abc
 import io
 import typing
 
-from typing_utils import NormalizedType, get_args, get_origin, issubtype, normalize
+from typing_utils import (
+    NormalizedType,
+    get_args,
+    get_origin,
+    issubtype,
+    normalize,
+    unknown,
+)
 
 JSON = typing.Union[
     int, float, bool, str, None, typing.Sequence["JSON"], typing.Mapping[str, "JSON"]
@@ -127,6 +134,9 @@ def test_is_subtype():
 
     # Union
     assert issubtype(list, typing.Union[typing.List, typing.Tuple])
+    assert issubtype(typing.Union[list, tuple], typing.Union[list, tuple, None])
+    assert issubtype(typing.Union[list, tuple], typing.Sequence)
+
     assert not issubtype(list, typing.Union[typing.Tuple, typing.Set])
     assert not issubtype(typing.Tuple[typing.Union[int, None]], typing.Tuple[None])
 
@@ -190,3 +200,14 @@ def test_is_subtype():
     assert issubtype(typing.Tuple[list, ...], typing.Tuple[list, ...])
     assert issubtype(typing.Tuple[list, ...], typing.Tuple[typing.Sequence, ...])
     assert not issubtype(typing.Tuple[list, ...], typing.Tuple[list])
+
+    # TypeVar
+    T1 = typing.TypeVar("T1")
+    T2 = typing.TypeVar("T2")
+    T3 = typing.TypeVar("T3", bound=str)
+    T4 = typing.TypeVar("T4", bound="typing.Union[list, tuple]")
+    assert issubtype(T1, T1)
+    assert not issubtype(T1, T2) and issubtype(T1, T2) is unknown
+    assert not issubtype(T3, T4) and issubtype(T3, T4) is not unknown
+    assert issubtype(T3, str)
+    assert issubtype(T4, typing.Sequence)
