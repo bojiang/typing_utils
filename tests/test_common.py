@@ -190,3 +190,11 @@ def test_is_subtype():
     assert issubtype(typing.Tuple[list, ...], typing.Tuple[list, ...])
     assert issubtype(typing.Tuple[list, ...], typing.Tuple[typing.Sequence, ...])
     assert not issubtype(typing.Tuple[list, ...], typing.Tuple[list])
+
+    # TypeVar
+    T1 = typing.TypeVar("T1")
+    T2 = typing.TypeVar("T2")
+    T3 = typing.TypeVar("T3", bound=str)
+    assert issubtype(T1, T1)
+    assert not issubtype(T1, T2)
+    assert issubtype(T3, str)

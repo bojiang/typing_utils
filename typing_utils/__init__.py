@@ -25,6 +25,22 @@ elif hasattr(typing, "_ForwardRef"):  # python3.6
 else:
     raise NotImplementedError()
 
+
+class FalseType(type):
+    '''
+    metaclass of Unknown
+    '''
+
+    def __bool__(cls):
+        return False
+
+
+class Unknown(metaclass=FalseType):
+    '''
+    A possible result of issubtype. For Examples: two TypeVars
+    '''
+
+
 BUILTINS_MAPPING = {
     typing.List: list,
     typing.Set: set,
@@ -47,21 +63,13 @@ STATIC_SUBTYPE_MAPPING: typing.Dict[type, typing.Type] = {
 }
 
 
-def _hashable(v):
-    """Determine whether `v` can be hashed."""
+def _hashable(value):
+    """Determine whether `value` can be hashed."""
     try:
-        hash(v)
+        hash(value)
     except TypeError:
         return False
     return True
-
-
-def _ensure_builtin(tp: typing.Optional[type]) -> typing.Optional[type]:
-    assert _hashable(tp), "_ensure_builtin should only be called on element types"
-
-    if tp in BUILTINS_MAPPING:
-        return BUILTINS_MAPPING[tp]
-    return tp
 
 
 get_type_hints = typing.get_type_hints
@@ -69,8 +77,22 @@ get_type_hints = typing.get_type_hints
 GenericClass = type(typing.List)
 UnionClass = type(typing.Union)
 
+Type = typing.Union[None, type, typing.TypeVar]
+TypeArgs = typing.Union[type, typing.AbstractSet[type], typing.Sequence[type]]
 
-def get_origin(tp):
+
+def _normalize_aliases(type_: Type) -> Type:
+    if isinstance(type_, typing.TypeVar):
+        return type_
+
+    assert _hashable(type_), "_normalize_aliases should only be called on element types"
+
+    if type_ in BUILTINS_MAPPING:
+        return BUILTINS_MAPPING[type_]
+    return type_
+
+
+def get_origin(type_):
     """Get the unsubscripted version of a type.
     This supports generic types, Callable, Tuple, Union, Literal, Final and ClassVar.
     Return None for unsupported types.
@@ -91,31 +113,31 @@ def get_origin(tp):
     """
     if hasattr(typing, 'get_origin'):  # python 3.8+
         _getter = getattr(typing, "get_origin")
-        ori = _getter(tp)
+        ori = _getter(type_)
     elif hasattr(typing.List, "_special"):  # python 3.7
-        if isinstance(tp, GenericClass) and not tp._special:
-            ori = tp.__origin__
-        elif hasattr(tp, "_special") and tp._special:
-            ori = tp
-        elif tp is typing.Generic:
+        if isinstance(type_, GenericClass) and not type_._special:
+            ori = type_.__origin__
+        elif hasattr(type_, "_special") and type_._special:
+            ori = type_
+        elif type_ is typing.Generic:
             ori = typing.Generic
         else:
             ori = None
     else:  # python 3.6
-        if isinstance(tp, GenericClass):
-            ori = tp.__origin__
+        if isinstance(type_, GenericClass):
+            ori = type_.__origin__
             if ori is None:
-                ori = tp
-        elif isinstance(tp, UnionClass):
-            ori = tp.__origin__
-        elif tp is typing.Generic:
+                ori = type_
+        elif isinstance(type_, UnionClass):
+            ori = type_.__origin__
+        elif type_ is typing.Generic:
             ori = typing.Generic
         else:
             ori = None
-    return _ensure_builtin(ori)
+    return _normalize_aliases(ori)
 
 
-def get_args(tp) -> typing.Tuple:
+def get_args(type_) -> typing.Tuple:
     """Get type arguments with all substitutions performed.
     For unions, basic simplifications used by Union constructor are performed.
 
@@ -133,30 +155,40 @@ def get_args(tp) -> typing.Tuple:
     """
     if hasattr(typing, 'get_args'):  # python 3.8+
         _getter = getattr(typing, "get_args")
-        res = _getter(tp)
+        res = _getter(type_)
     elif hasattr(typing.List, "_special"):  # python 3.7
-        if isinstance(tp, GenericClass) and not tp._special:  # backport for python 3.8
-            res = tp.__args__
-            if get_origin(tp) is collections.abc.Callable and res[0] is not Ellipsis:
+        if (
+            isinstance(type_, GenericClass) and not type_._special
+        ):  # backport for python 3.8
+            res = type_.__args__
+            if get_origin(type_) is collections.abc.Callable and res[0] is not Ellipsis:
                 res = (list(res[:-1]), res[-1])
         else:
             res = ()
     else:  # python 3.6
-        if isinstance(tp, (GenericClass, UnionClass)):  # backport for python 3.8
-            res = tp.__args__
-            if get_origin(tp) is collections.abc.Callable and res[0] is not Ellipsis:
+        if isinstance(type_, (GenericClass, UnionClass)):  # backport for python 3.8
+            res = type_.__args__
+            if get_origin(type_) is collections.abc.Callable and res[0] is not Ellipsis:
                 res = (list(res[:-1]), res[-1])
         else:
             res = ()
     return () if res is None else res
 
 
-def eval_forward_ref(fr, forward_refs=None):
+def eval_forward_ref(ref, forward_refs=None):
+    '''
+    eval forward_refs in all cPython versions
+    '''
     localns = forward_refs or {}
+
     if hasattr(typing, "_eval_type"):  # python3.8 & python 3.9
-        return typing._eval_type(fr, globals(), localns)
-    if hasattr(fr, "_eval_type"):  # python3.6
-        return fr._eval_type(globals(), localns)
+        _eval_type = getattr(typing, "_eval_type")
+        return _eval_type(ref, globals(), localns)
+
+    if hasattr(ref, "_eval_type"):  # python3.6
+        _eval_type = getattr(ref, "_eval_type")
+        return _eval_type(globals(), localns)
+
     raise NotImplementedError()
 
 
@@ -165,7 +197,7 @@ class NormalizedType(typing.NamedTuple):
     Normalized type, made it possible to compare, hash between types.
     '''
 
-    origin: typing.Optional[type]
+    origin: Type
     args: typing.Union[tuple, frozenset] = tuple()
 
     def __eq__(self, other):
@@ -190,26 +222,23 @@ class NormalizedType(typing.NamedTuple):
         return f"{self.origin}[{self.args}])"
 
 
-TypeArgs = typing.Union[type, typing.AbstractSet[type], typing.Sequence[type]]
-
-
 def _normalize_args(tps: TypeArgs):
     if isinstance(tps, collections.abc.Sequence):
-        return tuple(_normalize_args(tp) for tp in tps)
+        return tuple(_normalize_args(type_) for type_ in tps)
     if isinstance(tps, collections.abc.Set):
-        return frozenset(_normalize_args(tp) for tp in tps)
+        return frozenset(_normalize_args(type_) for type_ in tps)
     return normalize(tps)
 
 
-def normalize(type_: typing.Optional[type]) -> NormalizedType:
+def normalize(type_: Type) -> NormalizedType:
     '''
     convert types to NormalizedType instances.
     '''
     args = get_args(type_)
     origin = get_origin(type_)
     if not origin:
-        return NormalizedType(_ensure_builtin(type_))
-    origin = _ensure_builtin(origin)
+        return NormalizedType(_normalize_aliases(type_))
+    origin = _normalize_aliases(origin)
 
     if origin is typing.Union:  # sort args when the origin is Union
         args = _normalize_args(frozenset(args))
@@ -218,14 +247,22 @@ def normalize(type_: typing.Optional[type]) -> NormalizedType:
     return NormalizedType(origin, args)
 
 
-def _is_origin_subtype(
-    left: typing.Optional[type], right: typing.Optional[type]
-) -> bool:
+def _is_origin_subtype(left: Type, right: Type) -> bool:
     if left is right:
         return True
 
     if right is typing.Any:
         return True
+
+    if isinstance(left, typing.TypeVar):
+        # if left is right:
+        # return True
+        if isinstance(right, typing.TypeVar):
+            return False  # Unknown
+        left_bound = getattr(left, "__bound__", None)
+        if left_bound is None:
+            return False  # Unknown
+        return _is_origin_subtype(left_bound, right)
 
     if (
         left is not None
@@ -333,9 +370,7 @@ def _is_normal_subtype(
 
 
 def issubtype(
-    left: typing.Optional[type],
-    right: typing.Optional[type],
-    forward_refs: typing.Optional[dict] = None,
+    left: Type, right: Type, forward_refs: typing.Optional[dict] = None,
 ):
     """Check that the left argument is a subtype of the right.
     For unions, check if the type arguments of the left is a subset of the right.
