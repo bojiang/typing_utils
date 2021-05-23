@@ -127,6 +127,9 @@ def test_is_subtype():
 
     # Union
     assert issubtype(list, typing.Union[typing.List, typing.Tuple])
+    assert issubtype(typing.Union[list, tuple], typing.Union[list, tuple, None])
+    assert issubtype(typing.Union[list, tuple], typing.Sequence)
+
     assert not issubtype(list, typing.Union[typing.Tuple, typing.Set])
     assert not issubtype(typing.Tuple[typing.Union[int, None]], typing.Tuple[None])
 
@@ -195,6 +198,8 @@ def test_is_subtype():
     T1 = typing.TypeVar("T1")
     T2 = typing.TypeVar("T2")
     T3 = typing.TypeVar("T3", bound=str)
+    T4 = typing.TypeVar("T4", bound="typing.Union[list]")
     assert issubtype(T1, T1)
     assert not issubtype(T1, T2)
     assert issubtype(T3, str)
+    assert issubtype(T4, typing.Sequence)
