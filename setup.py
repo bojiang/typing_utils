@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf8") as f:
 
 setuptools.setup(
     name="typing_utils",
-    version="0.0.3",
+    version="0.1.0",
     author="bojiang",
     author_email="bojiang_@outlook.com",
     description="utils to inspect Python type annotations",
