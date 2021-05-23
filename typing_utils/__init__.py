@@ -29,22 +29,6 @@ else:
 unknown = None
 
 
-def optional_all(elements) -> typing.Optional[bool]:
-    if all(elements):
-        return True
-    if all(e is False for e in elements):
-        return False
-    return unknown
-
-
-def optional_any(elements) -> typing.Optional[bool]:
-    if any(elements):
-        return True
-    if any(e is None for e in elements):
-        return unknown
-    return False
-
-
 BUILTINS_MAPPING = {
     typing.List: list,
     typing.Set: set,
@@ -67,6 +51,22 @@ STATIC_SUBTYPE_MAPPING: typing.Dict[type, typing.Type] = {
 }
 
 
+def optional_all(elements) -> typing.Optional[bool]:
+    if all(elements):
+        return True
+    if all(e is False for e in elements):
+        return False
+    return unknown
+
+
+def optional_any(elements) -> typing.Optional[bool]:
+    if any(elements):
+        return True
+    if any(e is None for e in elements):
+        return unknown
+    return False
+
+
 def _hashable(value):
     """Determine whether `value` can be hashed."""
     try:
@@ -81,7 +81,7 @@ get_type_hints = typing.get_type_hints
 GenericClass = type(typing.List)
 UnionClass = type(typing.Union)
 
-Type = typing.Union[None, type, typing.TypeVar]
+Type = typing.Union[None, type, "typing.TypeVar"]
 OriginType = typing.Union[None, type]
 TypeArgs = typing.Union[type, typing.AbstractSet[type], typing.Sequence[type]]
 
