@@ -26,19 +26,23 @@ else:
     raise NotImplementedError()
 
 
-class FalseType(type):
-    '''
-    metaclass of Unknown
-    '''
+unknown = None
 
-    def __bool__(cls):
+
+def optional_all(elements) -> typing.Optional[bool]:
+    if all(elements):
+        return True
+    if all(e is False for e in elements):
         return False
+    return unknown
 
 
-class Unknown(metaclass=FalseType):
-    '''
-    A possible result of issubtype. For Examples: two TypeVars
-    '''
+def optional_any(elements) -> typing.Optional[bool]:
+    if any(elements):
+        return True
+    if any(e is None for e in elements):
+        return unknown
+    return False
 
 
 BUILTINS_MAPPING = {
@@ -281,7 +285,7 @@ def _is_origin_subtype_args(
     left: NormalizedTypeArgs,
     right: NormalizedTypeArgs,
     forward_refs: typing.Optional[typing.Mapping[str, type]],
-) -> bool:
+) -> typing.Optional[bool]:
     if isinstance(left, frozenset):
         if not isinstance(right, frozenset):
             return False
@@ -333,7 +337,7 @@ def _is_normal_subtype(
     left: NormalizedType,
     right: NormalizedType,
     forward_refs: typing.Optional[typing.Mapping[str, type]],
-):
+) -> typing.Optional[bool]:
 
     if isinstance(left.origin, ForwardRef):
         left = normalize(eval_forward_ref(left.origin, forward_refs=forward_refs))
@@ -349,21 +353,34 @@ def _is_normal_subtype(
     if right.origin is typing.Union and left.origin is typing.Union:
         return _is_origin_subtype_args(left.args, right.args, forward_refs)
     if right.origin is typing.Union:
-        return any(_is_normal_subtype(left, a, forward_refs) for a in right.args)
+        return optional_any(
+            _is_normal_subtype(left, a, forward_refs) for a in right.args
+        )
     if left.origin is typing.Union:
-        return all(_is_normal_subtype(a, right, forward_refs) for a in left.args)
+        return optional_all(
+            _is_normal_subtype(a, right, forward_refs) for a in left.args
+        )
 
     # TypeVar
-    if isinstance(left.origin, typing.TypeVar) or isinstance(
+    if isinstance(left.origin, typing.TypeVar) and isinstance(
         right.origin, typing.TypeVar
     ):
         if left.origin is right.origin:
             return True
-        if isinstance(right.origin, typing.TypeVar):
-            return False  # Unknown
+
+        left_bound = getattr(left.origin, "__bound__", None)
+        right_bound = getattr(right.origin, "__bound__", None)
+        if right_bound is None or left_bound is None:
+            return unknown
+        return _is_normal_subtype(
+            normalize(left_bound), normalize(right_bound), forward_refs
+        )
+    if isinstance(right.origin, typing.TypeVar):
+        return unknown
+    if isinstance(left.origin, typing.TypeVar):
         left_bound = getattr(left.origin, "__bound__", None)
         if left_bound is None:
-            return False  # Unknown
+            return unknown
         return _is_normal_subtype(normalize(left_bound), right, forward_refs)
 
     if not left.args and not right.args:
@@ -380,7 +397,7 @@ def _is_normal_subtype(
 
 def issubtype(
     left: Type, right: Type, forward_refs: typing.Optional[dict] = None,
-):
+) -> typing.Optional[bool]:
     """Check that the left argument is a subtype of the right.
     For unions, check if the type arguments of the left is a subset of the right.
     Also works for nested types including ForwardRefs.
