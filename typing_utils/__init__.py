@@ -78,6 +78,7 @@ GenericClass = type(typing.List)
 UnionClass = type(typing.Union)
 
 Type = typing.Union[None, type, typing.TypeVar]
+OriginType = typing.Union[None, type]
 TypeArgs = typing.Union[type, typing.AbstractSet[type], typing.Sequence[type]]
 
 
@@ -247,22 +248,9 @@ def normalize(type_: Type) -> NormalizedType:
     return NormalizedType(origin, args)
 
 
-def _is_origin_subtype(left: Type, right: Type) -> bool:
+def _is_origin_subtype(left: OriginType, right: OriginType) -> bool:
     if left is right:
         return True
-
-    if right is typing.Any:
-        return True
-
-    if isinstance(left, typing.TypeVar):
-        # if left is right:
-        # return True
-        if isinstance(right, typing.TypeVar):
-            return False  # Unknown
-        left_bound = getattr(left, "__bound__", None)
-        if left_bound is None:
-            return False  # Unknown
-        return issubtype(left_bound, right)
 
     if (
         left is not None
@@ -353,12 +341,30 @@ def _is_normal_subtype(
     if isinstance(right.origin, ForwardRef):
         right = normalize(eval_forward_ref(right.origin, forward_refs=forward_refs))
 
+    # Any
+    if right.origin is typing.Any:
+        return True
+
+    # Union
     if right.origin is typing.Union and left.origin is typing.Union:
         return _is_origin_subtype_args(left.args, right.args, forward_refs)
     if right.origin is typing.Union:
         return any(_is_normal_subtype(left, a, forward_refs) for a in right.args)
     if left.origin is typing.Union:
         return all(_is_normal_subtype(a, right, forward_refs) for a in left.args)
+
+    # TypeVar
+    if isinstance(left.origin, typing.TypeVar) or isinstance(
+        right.origin, typing.TypeVar
+    ):
+        if left.origin is right.origin:
+            return True
+        if isinstance(right.origin, typing.TypeVar):
+            return False  # Unknown
+        left_bound = getattr(left.origin, "__bound__", None)
+        if left_bound is None:
+            return False  # Unknown
+        return _is_normal_subtype(normalize(left_bound), right, forward_refs)
 
     if not left.args and not right.args:
         return _is_origin_subtype(left.origin, right.origin)
